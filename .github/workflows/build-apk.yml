@@ -1,0 +1,190 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Assemble the web app
+        run: |
+          python3 -m pip install --quiet pillow
+          mkdir -p www/icons assets
+          cp index.html www/index.html
+
+          cat > www/manifest.webmanifest <<'JSON'
+          {
+            "name": "Thoughts",
+            "short_name": "Thoughts",
+            "description": "Capture raw thoughts on daily pages, conclude them later.",
+            "start_url": "./index.html",
+            "scope": "./",
+            "display": "standalone",
+            "orientation": "portrait",
+            "background_color": "#171B22",
+            "theme_color": "#171B22",
+            "icons": [
+              { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+              { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+              { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+            ]
+          }
+          JSON
+
+          cat > www/sw.js <<'JS'
+          const CACHE = 'thoughts-v1';
+          const ASSETS = ['./', './index.html', './manifest.webmanifest'];
+          self.addEventListener('install', e => {
+            e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+          });
+          self.addEventListener('activate', e => {
+            e.waitUntil(caches.keys().then(k =>
+              Promise.all(k.filter(x => x !== CACHE).map(x => caches.delete(x)))
+            ).then(() => self.clients.claim()));
+          });
+          self.addEventListener('fetch', e => {
+            if (e.request.method !== 'GET') return;
+            e.respondWith(caches.match(e.request).then(hit => hit || fetch(e.request)
+              .catch(() => caches.match('./index.html'))));
+          });
+          JS
+
+      - name: Draw the icon
+        run: |
+          cat > draw_icon.py <<'PY'
+          from PIL import Image, ImageDraw
+          BG, AMB, SAGE = (23,27,34,255), (217,162,95,255), (143,175,146,255)
+          S = 2048
+
+          def mark(d, size, scale=1.0, bg=True, radius=0.22):
+              if bg:
+                  d.rounded_rectangle([0,0,size,size], radius=int(size*radius), fill=BG)
+              c = size/2
+              r = size*0.245*scale
+              w = size*0.062*scale
+              off = size*0.028*scale
+              cx, cy = c - off, c - off
+              d.ellipse([cx-r, cy-r, cx+r, cy+r], outline=AMB, width=int(w))
+              dr = size*0.088*scale
+              doff = size*0.155*scale
+              dx, dy = c + doff, c + doff
+              gap = dr + w*0.9
+              hole = BG if bg else (0,0,0,0)
+              d.ellipse([dx-gap, dy-gap, dx+gap, dy+gap], fill=hole)
+              d.ellipse([dx-dr, dy-dr, dx+dr, dy+dr], fill=SAGE)
+
+          def render(path, out, bg=True, scale=1.0, radius=0.22, circle=False):
+              img = Image.new('RGBA', (S,S), (0,0,0,0))
+              mark(ImageDraw.Draw(img), S, scale, bg, radius)
+              if circle:
+                  m = Image.new('L', (S,S), 0)
+                  ImageDraw.Draw(m).ellipse([0,0,S,S], fill=255)
+                  img.putalpha(m)
+              img.resize((out,out), Image.LANCZOS).save(path)
+
+          render('www/icons/icon-192.png', 192)
+          render('www/icons/icon-512.png', 512)
+          render('www/icons/icon-maskable-512.png', 512, scale=0.85, radius=0.0)
+          render('assets/icon.png', 1024)
+          PY
+          python3 draw_icon.py
+          echo "web icons done"
+
+      - name: Scaffold the Android project
+        run: |
+          cat > package.json <<'JSON'
+          {
+            "name": "thoughts",
+            "version": "1.0.0",
+            "private": true,
+            "devDependencies": { "@capacitor/cli": "^6.2.0" },
+            "dependencies": {
+              "@capacitor/android": "^6.2.0",
+              "@capacitor/core": "^6.2.0"
+            }
+          }
+          JSON
+
+          cat > capacitor.config.json <<'JSON'
+          {
+            "appId": "com.ahmedsattarluna.thoughts",
+            "appName": "Thoughts",
+            "webDir": "www",
+            "android": { "backgroundColor": "#171B22" },
+            "server": { "androidScheme": "https" }
+          }
+          JSON
+
+          npm install
+          npx cap add android
+          npx cap sync android
+
+      - name: Apply the launcher icon
+        run: |
+          cat > launcher.py <<'PY'
+          import glob, os
+          from PIL import Image, ImageDraw
+          exec(open('draw_icon.py').read().split("render('www")[0])
+
+          made = 0
+          for path in glob.glob('android/app/src/main/res/mipmap-*/*.png'):
+              name = os.path.basename(path)
+              try:
+                  size = Image.open(path).size[0]
+              except Exception:
+                  continue
+              img = Image.new('RGBA', (S, S), (0,0,0,0))
+              if 'foreground' in name:
+                  # adaptive foreground: transparent, mark inset into the safe zone
+                  mark(ImageDraw.Draw(img), S, 1.0, False)
+              else:
+                  mark(ImageDraw.Draw(img), S, 1.0, True, 0.22)
+                  if 'round' in name:
+                      m = Image.new('L', (S,S), 0)
+                      ImageDraw.Draw(m).ellipse([0,0,S,S], fill=255)
+                      img.putalpha(m)
+              img.resize((size, size), Image.LANCZOS).save(path)
+              made += 1
+          print('rewrote', made, 'launcher icons')
+
+          # adaptive icon background colour behind the foreground
+          for f in glob.glob('android/app/src/main/res/values/ic_launcher_background.xml'):
+              open(f, 'w').write(
+                  '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+                  '    <color name="ic_launcher_background">#171B22</color>\n</resources>\n')
+              print('set adaptive background')
+          PY
+          python3 launcher.py
+
+      - name: Build
+        run: |
+          chmod +x android/gradlew
+          cd android && ./gradlew assembleDebug --no-daemon
+
+      - name: Name the file
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk out/Thoughts.apk
+          ls -lh out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Thoughts-APK
+          path: out/Thoughts.apk
+          if-no-files-found: error
