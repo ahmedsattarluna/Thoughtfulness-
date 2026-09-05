@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Thoughts</title>
+<meta name="theme-color" content="#171B22">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-64.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #171B22;
+    --surface: #1F242D;
+    --line: #2C333E;
+    --ink: #E6E9EE;
+    --ink-dim: #98A2B1;
+    --ink-faint: #667080;
+    --open: #D9A25F;
+    --frame: rgba(217, 162, 95, .30);
+    --focus: rgba(217, 162, 95, .55);
+    --done: #8FAF92;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --pad-t: env(safe-area-inset-top, 0px);
+    --pad-b: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { background: var(--bg); height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 100%;
+    overscroll-behavior-y: none;
+  }
+
+  /* the app sits inside a soft amber frame, rounded on all four corners */
+  #frame {
+    position: fixed;
+    top: calc(6px + var(--pad-t));
+    bottom: calc(6px + var(--pad-b));
+    left: 6px; right: 6px;
+    border: 1px solid var(--frame);
+    border-radius: 20px;
+    pointer-events: none;
+    z-index: 40;
+  }
+  #scroll {
+    position: fixed;
+    top: calc(7px + var(--pad-t));
+    bottom: calc(7px + var(--pad-b));
+    left: 7px; right: 7px;
+    border-radius: 19px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  #page { padding: 22px 18px 60px; max-width: 680px; margin: 0 auto; }
+
+  button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible {
+    outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 8px;
+  }
+
+  /* compose */
+  .compose {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 15px 11px;
+  }
+  .compose:focus-within { border-color: rgba(217,162,95,.35); }
+  textarea {
+    width: 100%; border: none; background: none; resize: none; border-radius: 6px;
+    color: var(--ink); font-family: var(--serif); font-size: 17px; line-height: 1.55;
+    outline: none; display: block; min-height: 62px; padding: 0;
+  }
+  textarea::placeholder { color: var(--ink-faint); }
+  .compose-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+  }
+  .hint { font-size: 12px; color: var(--ink-faint); }
+  .hint.err { color: var(--open); }
+  .save {
+    background: var(--ink); color: var(--bg); font-weight: 500; font-size: 13.5px;
+    padding: 8px 16px; border-radius: 8px; flex-shrink: 0;
+  }
+  .save:disabled { background: var(--line); color: var(--ink-faint); cursor: default; }
+
+  /* controls */
+  .controls { margin: 22px 0 4px; }
+  .search {
+    width: 100%; background: none; border: none; border-bottom: 1px solid var(--line);
+    color: var(--ink); font-family: var(--sans); font-size: 14px; padding: 7px 0; outline: none;
+  }
+  .search::placeholder { color: var(--ink-faint); }
+  .search:focus { border-bottom-color: var(--ink-dim); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .chip {
+    font-size: 12.5px; color: var(--ink-dim); padding: 5px 11px;
+    border: 1px solid var(--line); border-radius: 20px; white-space: nowrap;
+  }
+  .chip[aria-pressed="true"] { color: var(--bg); background: var(--ink-dim); border-color: var(--ink-dim); }
+  .chip.tag[aria-pressed="true"] { background: var(--open); border-color: var(--open); }
+  .count { font-size: 12.5px; color: var(--ink-faint); margin-top: 14px; }
+
+  /* day pages */
+  .day { margin-top: 30px; }
+  .day-head {
+    display: flex; align-items: baseline; gap: 10px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--line);
+  }
+  .day-date { font-size: 14px; font-weight: 600; }
+  .day-meta { font-size: 12px; color: var(--ink-faint); }
+
+  .thought { padding: 16px 0 15px; border-bottom: 1px solid rgba(44,51,62,.6); }
+  .thought p {
+    margin: 0; font-family: var(--serif); font-size: 17px; line-height: 1.6;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .thought.done p { color: var(--ink-dim); }
+  .tag-in { color: var(--open); }
+  .thought.done .tag-in { color: var(--ink-faint); }
+
+  .conclusion {
+    margin: 12px 0 0; padding: 2px 0 2px 13px; border-left: 2px solid var(--done);
+    font-family: var(--serif); font-size: 15.5px; line-height: 1.55; color: var(--done);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .concl-edit { margin-top: 12px; padding-left: 13px; border-left: 2px solid var(--done); }
+  .concl-edit textarea { font-size: 15.5px; min-height: 46px; }
+  .concl-actions { display: flex; gap: 16px; margin-top: 8px; }
+
+  .thought-foot {
+    display: flex; align-items: center; gap: 14px; margin-top: 11px;
+    font-size: 12.5px; color: var(--ink-faint);
+  }
+  .status { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--open); }
+  .done .dot { background: var(--done); }
+  .act { font-size: 12.5px; color: var(--ink-dim); padding: 3px 0; }
+  .act.warn:active { color: #D98C7A; }
+  .spacer { flex: 1; }
+
+  .empty {
+    margin-top: 40px; font-family: var(--serif); font-size: 16px;
+    color: var(--ink-faint); line-height: 1.6;
+  }
+  .foot { margin-top: 46px; font-size: 12px; display: flex; gap: 18px; }
+</style>
+</head>
+<body>
+
+<div id="frame"></div>
+<div id="scroll"><div id="page">
+
+  <div class="compose">
+    <textarea id="input" rows="2" placeholder="What's on your mind? Use #tags inline."></textarea>
+    <div class="compose-foot">
+      <span class="hint" id="hint">Saves to today's page</span>
+      <button class="save" id="save" disabled>Save thought</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <input class="search" id="search" placeholder="Search thoughts and conclusions" autocomplete="off">
+    <div class="chips" id="filters">
+      <button class="chip" data-status="all" aria-pressed="true">All</button>
+      <button class="chip" data-status="open" aria-pressed="false">Open</button>
+      <button class="chip" data-status="done" aria-pressed="false">Concluded</button>
+    </div>
+    <div class="chips" id="tagbar"></div>
+    <div class="count" id="count"></div>
+  </div>
+
+  <div id="list"></div>
+
+  <div class="foot">
+    <button class="act" id="export">Export as text</button>
+    <button class="act warn" id="reset">Clear everything</button>
+  </div>
+
+</div></div>
+
+<script>
+const KEY = 'thoughts-v1';
+let data = [], status = 'all', tag = null, query = '', editing = null;
+const $ = id => document.getElementById(id);
+
+/* ---------- storage: Claude artifact storage if present, else local device ---------- */
+const store = {
+  async get() {
+    if (window.storage) {
+      try { const r = await window.storage.get(KEY); return r ? r.value : null; }
+      catch (e) { /* key absent */ }
+    }
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  },
+  async set(v) {
+    if (window.storage) { try { await window.storage.set(KEY, v); } catch (e) {} }
+    localStorage.setItem(KEY, v);
+  },
+  async clear() {
+    if (window.storage) { try { await window.storage.delete(KEY); } catch (e) {} }
+    try { localStorage.removeItem(KEY); } catch (e) {}
+  }
+};
+
+async function load() {
+  try {
+    const raw = await store.get();
+    data = raw ? JSON.parse(raw) : [];
+  } catch (e) { data = []; }
+  render();
+}
+let saveTimer;
+function persist() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try { await store.set(JSON.stringify(data)); setHint("Saves to today's page"); }
+    catch (e) { setHint('Storage is full or blocked. Export your thoughts to be safe.', true); }
+  }, 120);
+}
+function setHint(msg, err) {
+  const h = $('hint'); h.textContent = msg; h.classList.toggle('err', !!err);
+}
+
+/* ---------- helpers ---------- */
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TAG_RE = /#[\p{L}\p{N}_-]+/gu;
+const tagsOf = t => [...new Set((t.match(TAG_RE) || []).map(x => x.slice(1).toLowerCase()))];
+const markup = t => esc(t).replace(TAG_RE, m => '<span class="tag-in">' + m + '</span>');
+
+function dayKey(ts) {
+  const d = new Date(ts);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function dayLabel(key) {
+  const [y,m,d] = key.split('-').map(Number);
+  const date = new Date(y, m-1, d);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((today - date) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  const opts = { weekday:'short', day:'numeric', month:'short' };
+  if (date.getFullYear() !== today.getFullYear()) opts.year = 'numeric';
+  return date.toLocaleDateString(undefined, opts);
+}
+const timeOf = ts => new Date(ts).toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' });
+const find = id => data.find(t => t.id === id);
+
+/* ---------- render ---------- */
+function visible() {
+  const q = query.trim().toLowerCase();
+  return data.filter(t => {
+    if (status === 'open' && t.done) return false;
+    if (status === 'done' && !t.done) return false;
+    if (tag && !tagsOf(t.text).includes(tag)) return false;
+    if (q && !(t.text + ' ' + t.conclusion).toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+function render() {
+  const items = visible();
+
+  const counts = {};
+  data.forEach(t => tagsOf(t.text).forEach(g => counts[g] = (counts[g]||0)+1));
+  const tags = Object.keys(counts).sort((a,b) => counts[b]-counts[a] || a.localeCompare(b)).slice(0, 14);
+  $('tagbar').innerHTML = tags.map(g =>
+    '<button class="chip tag" data-tag="' + esc(g) + '" aria-pressed="' + (tag===g) + '">#' +
+    esc(g) + ' <span style="opacity:.55">' + counts[g] + '</span></button>').join('');
+
+  const open = data.filter(t => !t.done).length;
+  $('count').textContent = data.length
+    ? data.length + ' thought' + (data.length>1?'s':'') + ' \u00B7 ' + open + ' still open' : '';
+
+  if (!items.length) {
+    $('list').innerHTML = '<div class="empty">' + (data.length
+      ? 'Nothing matches that. Clear the search or filters to see everything.'
+      : 'No thoughts yet. Write the first one above \u2014 you can make sense of it later.') + '</div>';
+    return;
+  }
+
+  const groups = [];
+  items.forEach(t => {
+    const k = dayKey(t.created);
+    if (!groups.length || groups[groups.length-1].key !== k) groups.push({ key: k, items: [] });
+    groups[groups.length-1].items.push(t);
+  });
+
+  $('list').innerHTML = groups.map(g => {
+    const o = g.items.filter(t => !t.done).length;
+    return '<section class="day"><div class="day-head"><span class="day-date">' + dayLabel(g.key) +
+      '</span><span class="day-meta">' + g.items.length + ' thought' + (g.items.length>1?'s':'') +
+      (o ? ' \u00B7 ' + o + ' open' : '') + '</span></div>' + g.items.map(card).join('') + '</section>';
+  }).join('');
+}
+
+function card(t) {
+  const ed = editing === t.id;
+  return '<article class="thought ' + (t.done ? 'done' : '') + '">' +
+    '<p>' + markup(t.text) + '</p>' +
+    (t.conclusion && !ed ? '<div class="conclusion">' + esc(t.conclusion) + '</div>' : '') +
+    (ed ? '<div class="concl-edit"><textarea data-concl="' + t.id +
+        '" rows="2" placeholder="So what do you make of it?">' + esc(t.conclusion) + '</textarea>' +
+        '<div class="concl-actions"><button class="act" data-save="' + t.id + '">Save conclusion</button>' +
+        '<button class="act" data-cancel="1">Cancel</button></div></div>' : '') +
+    '<div class="thought-foot"><span>' + timeOf(t.created) + '</span>' +
+    '<span class="status"><span class="dot"></span>' + (t.done ? 'Concluded' : 'Open') + '</span>' +
+    '<span class="spacer"></span>' +
+    (ed ? '' : '<button class="act" data-edit="' + t.id + '">' + (t.conclusion ? 'Edit conclusion' : 'Conclude') + '</button>') +
+    (t.done ? '<button class="act" data-reopen="' + t.id + '">Reopen</button>' : '') +
+    '<button class="act warn" data-del="' + t.id + '">Delete</button></div></article>';
+}
+
+/* ---------- events ---------- */
+const input = $('input');
+const grow = el => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
+input.addEventListener('input', () => { grow(input); $('save').disabled = !input.value.trim(); });
+input.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); $('save').click(); }
+});
+$('save').addEventListener('click', () => {
+  const v = input.value.trim(); if (!v) return;
+  data.unshift({ id: Date.now() + Math.random().toString(36).slice(2,6), text: v,
+                 created: Date.now(), conclusion: '', done: false });
+  input.value = ''; grow(input); $('save').disabled = true;
+  persist(); render();
+});
+
+$('search').addEventListener('input', e => { query = e.target.value; render(); });
+$('filters').addEventListener('click', e => {
+  const b = e.target.closest('[data-status]'); if (!b) return;
+  status = b.dataset.status;
+  [...$('filters').children].forEach(c => c.setAttribute('aria-pressed', c === b));
+  render();
+});
+$('tagbar').addEventListener('click', e => {
+  const b = e.target.closest('[data-tag]'); if (!b) return;
+  tag = (tag === b.dataset.tag) ? null : b.dataset.tag; render();
+});
+
+$('list').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const d = b.dataset;
+  if (d.edit) {
+    editing = d.edit; render();
+    const ta = document.querySelector('[data-concl="' + d.edit + '"]');
+    if (ta) { grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  } else if (d.cancel) { editing = null; render(); }
+  else if (d.save) {
+    const ta = document.querySelector('[data-concl="' + d.save + '"]');
+    const t = find(d.save);
+    t.conclusion = ta.value.trim(); t.done = !!t.conclusion;
+    editing = null; persist(); render();
+  }
+  else if (d.reopen) { find(d.reopen).done = false; persist(); render(); }
+  else if (d.del) {
+    if (!confirm('Delete this thought?')) return;
+    data = data.filter(x => x.id !== d.del); persist(); render();
+  }
+});
+$('list').addEventListener('input', e => { if (e.target.tagName === 'TEXTAREA') grow(e.target); });
+$('list').addEventListener('keydown', e => {
+  if (e.target.tagName === 'TEXTAREA' && (e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault();
+    const b = document.querySelector('[data-save="' + e.target.dataset.concl + '"]');
+    if (b) b.click();
+  }
+});
+
+$('export').addEventListener('click', () => {
+  if (!data.length) return;
+  let out = '', last = '';
+  [...data].sort((a,b) => a.created - b.created).forEach(t => {
+    const k = dayKey(t.created);
+    if (k !== last) { out += '\n\n' + dayLabel(k) + ' (' + k + ')\n' + '\u2014'.repeat(20) + '\n'; last = k; }
+    out += '\n' + timeOf(t.created) + '  ' + t.text + '\n';
+    if (t.conclusion) out += '   \u2192 ' + t.conclusion + '\n';
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([out.trim()], { type: 'text/plain;charset=utf-8' }));
+  a.download = 'thoughts.txt'; a.click();
+});
+
+$('reset').addEventListener('click', async () => {
+  if (!confirm('Delete all thoughts permanently?')) return;
+  data = []; await store.clear(); render();
+});
+
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+load();
+</script>
+</body>
+</html>
